@@ -22,7 +22,9 @@ def foo(course_ids: list[int], db: Connection) -> dict:
 
     page_sources = {}
     try:
+        print("Начинаю парсинг")
         for course_id in course_ids:
+            print(f"Парсинг курса {course_id}")
             url = f'https://vstup.edbo.gov.ua/offer/{course_id}/'
             driver.get(url)
             time.sleep(1)
@@ -40,23 +42,30 @@ def foo(course_ids: list[int], db: Connection) -> dict:
             page_sources[course_id] = page_source
     finally:
         driver.quit()
+    print("Парсинг завершен. Начинаю обработку данных")
 
     return_arr = {}
     for course_id, page_source in page_sources.items():
+        print(f"Обработка данных курса {course_id}")
+
         soup = BeautifulSoup(page_source, 'html.parser')
 
         if db.execute(f'SELECT * FROM courses WHERE id = {course_id}').fetchone() is None:
             db.execute(f'INSERT INTO courses (id, last_update) VALUES ({course_id}, "0")')
             db.commit()
 
+        print("Проверяю наличие обновлений")
         last_update = db.execute(f'SELECT last_update FROM courses WHERE id = {course_id}').fetchone()[0]
         page_last_update = soup.select_one('footer').find('b').text
         if last_update == page_last_update:
+            print("Курс не обновлен")
             continue
         else:
+            print("Курс обновлен")
             db.execute(f'UPDATE courses SET last_update = "{page_last_update}" WHERE id = {course_id}')
             db.commit()
 
+        print("Получаю данные")
         speciality_tags = soup.select_one('dl.row.offer-university-specialities-name').find_all('span')
         speciality_name = speciality_tags[0].text + ' ' + speciality_tags[1].text
         op = soup.select_one('dl.row.offer-study-programs').find('dd').text
@@ -79,6 +88,7 @@ def foo(course_ids: list[int], db: Connection) -> dict:
         values_approved = []
         values_all = []
 
+        print("Обрабатываю заявки")
         for div in div_elements_all:
             if div.find(class_='indicator-q'):
                 continue
@@ -93,6 +103,8 @@ def foo(course_ids: list[int], db: Connection) -> dict:
             values_all.append(found_value)
             if div in div_elements_approved:
                 values_approved.append(found_value)
+
+        print("Сортирую данные")
 
         values_all.sort(reverse=True)
         values_all = values_all[:budget_amount]
@@ -109,6 +121,8 @@ def foo(course_ids: list[int], db: Connection) -> dict:
             'min_value': values_all[-1] if values_all else 0,
             'min_value_approved': values_approved[-1] if values_approved else 0
         }
+
+    print("Обработка данных завершена")
 
     return return_arr
 
