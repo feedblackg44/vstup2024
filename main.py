@@ -18,7 +18,9 @@ def foo(course_ids: list[int], db: Connection) -> dict:
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
 
+    print("Запускаю браузер")
     driver = webdriver.Chrome(options=options)
+    print("Браузер запущен")
 
     page_sources = {}
     try:
