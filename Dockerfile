@@ -10,4 +10,4 @@ RUN apt-get update && apt-get install -y \
 
 RUN pip install -r req.txt
 
-CMD ["python", "main.py"]
+CMD ["python", "-u", "main.py"]
