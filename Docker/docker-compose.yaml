@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  bot:
+    build: ..
+    volumes:
+      - ../db:/app/db:rw
+      - ../config.json:/app/config.json:ro
+    environment:
+      - TOKEN=${TOKEN}
