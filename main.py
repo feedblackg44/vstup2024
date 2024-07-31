@@ -58,7 +58,8 @@ def foo(course_ids: list[int], db: Connection) -> dict:
 
         print("Проверяю наличие обновлений")
         last_update = db.execute(f'SELECT last_update FROM courses WHERE id = {course_id}').fetchone()[0]
-        page_last_update = soup.select_one('footer').find('b').text
+        footer = soup.select_one('footer')
+        page_last_update = footer.find('b').text if footer else '0'
         if last_update == page_last_update:
             print("Курс не обновлен")
             continue
@@ -68,15 +69,45 @@ def foo(course_ids: list[int], db: Connection) -> dict:
             db.commit()
 
         print("Получаю данные")
+        university_tag = soup.select_one('h5.text-primary.text-uppercase')
+        university_name = university_tag.text if university_tag else 'Неизвестно'
+        faculty_tag = soup.select_one('dl.row.offer-university-facultet-name')
+        faculty_name = "🎓 " + faculty_tag.find('dd').text if faculty_tag else 'Неизвестно'
         speciality_tags = soup.select_one('dl.row.offer-university-specialities-name').find_all('span')
-        speciality_name = speciality_tags[0].text + ' ' + speciality_tags[1].text
-        op = soup.select_one('dl.row.offer-study-programs').find('dd').text
+
+        smiles = {
+            1: "1️⃣",
+            2: "2️⃣",
+            3: "3️⃣",
+            4: "4️⃣",
+            5: "5️⃣",
+            6: "6️⃣",
+            7: "7️⃣",
+            8: "8️⃣",
+            9: "9️⃣",
+            0: "0️⃣"
+        }
+
+        if len(speciality_tags) > 1:
+            spec_code = speciality_tags[0].text
+            spec_code = ''.join([smiles[int(i)] for i in spec_code])
+            speciality_name = spec_code + ' ' + speciality_tags[1].text
+        elif len(speciality_tags) == 1:
+            spec_code = speciality_tags[0].text
+            spec_code = ''.join([smiles[int(i)] for i in spec_code])
+            speciality_name = spec_code
+        else:
+            speciality_name = 'Неизвестно'
+        study_prog = soup.select_one('dl.row.offer-study-programs')
+        op = study_prog.find('dd').text if study_prog else 'Неизвестно'
         is_magistracy = soup.select('dl.row.offer-master-program-type-name') != []
         if is_magistracy:
             op_type = soup.select_one('dl.row.offer-master-program-type-name').find('dd').text
             op += f' ({op_type})'
-        license_amount = int(soup.select_one('dl.row.offer-order-license').find('dd').text)
-        budget_amount = int(soup.select_one('dl.row.offer-max-order').find('dd').text)
+        order_license = soup.select_one('dl.row.offer-order-license')
+        license_amount = int(order_license.find('dd').text) if order_license else 0
+        max_order = soup.select_one('dl.row.offer-max-order')
+        budget_amount = int(max_order.find('dd').text) if max_order else 0
 
         offer_requests_body = soup.select_one('div#offer-requests-body')
 
@@ -94,7 +125,7 @@ def foo(course_ids: list[int], db: Connection) -> dict:
         for div in div_elements_all:
             if div.find(class_='indicator-q'):
                 continue
-            if div.find(class_='offer-request-contract'):
+            if div.find(class_='offer-request-contract') and budget_amount:
                 continue
 
             found_value = float(div.find(class_='offer-request-kv')
@@ -109,11 +140,13 @@ def foo(course_ids: list[int], db: Connection) -> dict:
         print("Сортирую данные")
 
         values_all.sort(reverse=True)
-        values_all = values_all[:budget_amount]
+        values_all = values_all[:budget_amount or license_amount]
         values_approved.sort(reverse=True)
-        values_approved = values_approved[:budget_amount]
+        values_approved = values_approved[:budget_amount or license_amount]
 
         return_arr[course_id] = {
+            'university_name': university_name,
+            'faculty_name': faculty_name,
             'speciality_name': speciality_name,
             'op': op,
             'license_amount': license_amount,
@@ -164,11 +197,14 @@ def main() -> None:
 
     formatted_results = {}
     for idx, (course_id, result) in enumerate(results.items()):
-        str_to_print = f"{result['speciality_name']}\n" \
+        str_to_print = f"<b>{result['university_name'].upper()}</b>\n" \
+                       f"{result['faculty_name']}\n\n" \
+                       f"{result['speciality_name']}\n" \
                        f"<i>{result['op']}</i>\n\n" \
                        f"<b>Количество бюджетных мест</b>: {result['budget_amount']}/{result['license_amount']}\n" \
                        f"<b>Одобрено заявок</b>: {result['approved_requests']}/{result['all_requests']}\n" \
-                       f"<b>Минимальный балл на бюджет</b>: {result['min_value_approved']} " \
+                       f"<b>Минимальный балл на {'бюджет' if result['budget_amount'] else 'контракт'}</b>: " \
+                       f"{result['min_value_approved']} " \
                        f"({result['min_value']} по всем)"
         formatted_results[course_id] = str_to_print
 
