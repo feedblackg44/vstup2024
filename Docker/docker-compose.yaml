@@ -6,3 +6,4 @@ services:
       - ../config.json:/app/config.json:ro
     environment:
       - TOKEN=${TOKEN}
+      - VSTUP_URL=${VSTUP_URL}

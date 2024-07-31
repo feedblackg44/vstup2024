@@ -27,7 +27,7 @@ def foo(course_ids: list[int], db: Connection) -> dict:
         print("Начинаю парсинг")
         for course_id in course_ids:
             print(f"Парсинг курса {course_id}")
-            url = f'https://vstup.edbo.gov.ua/offer/{course_id}/'
+            url = f'{os.environ.get("VSTUP_URL")}/offer/{course_id}/'
             driver.get(url)
             time.sleep(1)
 
