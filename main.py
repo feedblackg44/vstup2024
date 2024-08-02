@@ -112,7 +112,7 @@ def foo(course_ids: list[int], db: Connection) -> dict:
         offer_requests_body = soup.select_one('div#offer-requests-body')
 
         if offer_requests_body:
-            div_elements_all = offer_requests_body.select('div.offer-request:not(.request-status-1)')
+            div_elements_all = offer_requests_body.select('div.offer-request:not(.request-status-4)')
             div_elements_approved = offer_requests_body.select('div.offer-request.request-status-6')
         else:
             div_elements_all = []
