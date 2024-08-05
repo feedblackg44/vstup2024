@@ -30,6 +30,7 @@ def foo(course_ids: list[int], db: Connection, debug=False) -> dict:
         for course_id in course_ids:
             print(f"Парсинг курса {course_id}")
             url = f'{os.environ.get("VSTUP_URL")}/offer/{course_id}/'
+            url_to_show = f'{os.environ.get("SHOW_URL")}/offer/{course_id}/'
             driver.get(url)
             time.sleep(1)
 
@@ -44,7 +45,7 @@ def foo(course_ids: list[int], db: Connection, debug=False) -> dict:
 
             page_source = driver.page_source
             page_sources[course_id] = page_source
-            links[course_id] = url
+            links[course_id] = url_to_show
     finally:
         driver.quit()
     print("Парсинг завершен. Начинаю обработку данных")

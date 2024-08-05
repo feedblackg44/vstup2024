@@ -7,4 +7,5 @@ services:
     environment:
       - TOKEN=${TOKEN}
       - VSTUP_URL=${VSTUP_URL}
+      - SHOW_URL=${SHOW_URL}
       - DEBUG=${DEBUG}
