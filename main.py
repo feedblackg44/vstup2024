@@ -1,5 +1,6 @@
 import json
 import os
+from collections import defaultdict
 from sqlite3 import Connection, connect
 
 from dotenv import load_dotenv
@@ -11,7 +12,7 @@ import telebot
 import time
 
 
-def foo(course_ids: list[int], db: Connection) -> dict:
+def foo(course_ids: list[int], db: Connection, debug=False) -> dict:
     options = webdriver.ChromeOptions()
     options.add_argument('--headless')
     options.add_argument('--disable-gpu')
@@ -22,6 +23,7 @@ def foo(course_ids: list[int], db: Connection) -> dict:
     driver = webdriver.Chrome(options=options)
     print("Браузер запущен")
 
+    links = {}
     page_sources = {}
     try:
         print("Начинаю парсинг")
@@ -42,6 +44,7 @@ def foo(course_ids: list[int], db: Connection) -> dict:
 
             page_source = driver.page_source
             page_sources[course_id] = page_source
+            links[course_id] = url
     finally:
         driver.quit()
     print("Парсинг завершен. Начинаю обработку данных")
@@ -56,17 +59,18 @@ def foo(course_ids: list[int], db: Connection) -> dict:
             db.execute(f'INSERT INTO courses (id, last_update) VALUES ({course_id}, "0")')
             db.commit()
 
-        print("Проверяю наличие обновлений")
-        last_update = db.execute(f'SELECT last_update FROM courses WHERE id = {course_id}').fetchone()[0]
-        footer = soup.select_one('footer')
-        page_last_update = footer.find('b').text if footer else '0'
-        if last_update == page_last_update:
-            print("Курс не обновлен")
-            continue
-        else:
-            print("Курс обновлен")
-            db.execute(f'UPDATE courses SET last_update = "{page_last_update}" WHERE id = {course_id}')
-            db.commit()
+        if not debug:
+            print("Проверяю наличие обновлений")
+            last_update = db.execute(f'SELECT last_update FROM courses WHERE id = {course_id}').fetchone()[0]
+            footer = soup.select_one('footer')
+            page_last_update = footer.find('b').text if footer else '0'
+            if last_update == page_last_update:
+                print("Курс не обновлен")
+                continue
+            else:
+                print("Курс обновлен")
+                db.execute(f'UPDATE courses SET last_update = "{page_last_update}" WHERE id = {course_id}')
+                db.commit()
 
         print("Получаю данные")
         university_tag = soup.select_one('h5.text-primary.text-uppercase')
@@ -154,7 +158,8 @@ def foo(course_ids: list[int], db: Connection) -> dict:
             'all_requests': len(div_elements_all),
             'approved_requests': len(div_elements_approved),
             'min_value': values_all[-1] if values_all else 0,
-            'min_value_approved': values_approved[-1] if values_approved else 0
+            'min_value_approved': values_approved[-1] if values_approved else 0,
+            'url': links[course_id] if course_id in links else 'Неизвестно'
         }
 
     print("Обработка данных завершена")
@@ -191,31 +196,49 @@ def main() -> None:
     ''')
     db.commit()
 
-    results = foo(course_ids, db)
+    results = foo(course_ids, db, debug=os.environ.get('DEBUG', False) == 'True')
 
-    results = dict(sorted(results.items(), key=lambda x: x[1].get('min_value_approved', 0), reverse=True))
+    res_by_university = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
+    for course_id, result in results.items():
+        university_name = result.pop('university_name')
+        faculty_name = result.pop('faculty_name')
+        speciality_name = result.pop('speciality_name')
 
-    formatted_results = {}
-    for idx, (course_id, result) in enumerate(results.items()):
-        str_to_print = f"<b>{result['university_name'].upper()}</b>\n" \
-                       f"{result['faculty_name']}\n\n" \
-                       f"{result['speciality_name']}\n" \
-                       f"<i>{result['op']}</i>\n\n" \
-                       f"<b>Количество бюджетных мест</b>: {result['budget_amount']}/{result['license_amount']}\n" \
-                       f"<b>Одобрено заявок</b>: {result['approved_requests']}/{result['all_requests']}\n" \
-                       f"<b>Минимальный балл на {'бюджет' if result['budget_amount'] else 'контракт'}</b>: " \
-                       f"{result['min_value_approved']} " \
-                       f"({result['min_value']} по всем)"
-        formatted_results[course_id] = str_to_print
+        university_name = f"<b>{university_name.upper()}</b>\n\n"
+        faculty_name = f"{faculty_name}\n\n"
+        speciality_name = f"{speciality_name}\n\n"
 
-    sep = "\n\n" + "-" * 50 + "\n\n"
+        str_result = f"<a href='{result['url']}'><i>{result['op']}</i></a>\n" \
+                     f"<b>Количество бюджетных мест</b>: " \
+                     f"{result['budget_amount']}/{result['license_amount']}\n" \
+                     f"<b>Одобрено заявок</b>: {result['approved_requests']}/{result['all_requests']}\n" \
+                     f"<b>Минимальный балл на {'бюджет' if result['budget_amount'] else 'контракт'}</b>: " \
+                     f"{result['min_value_approved']} ({result['min_value']} по всем)\n\n"
+
+        res_by_university[university_name][faculty_name][speciality_name][course_id] = str_result
 
     for chat_id in CHAT_IDS:
-        out_arr = [formatted_results[course_id] for course_id in users[str(chat_id)]['course_ids']
-                   if course_id in formatted_results]
-        if out_arr:
-            bot.send_message(chat_id, sep.join(out_arr),
-                             parse_mode='HTML')
+        valid_ids = users[str(chat_id)]['course_ids']
+        str_out = ""
+        for idx, (university_name, faculties) in enumerate(res_by_university.items()):
+            faculty_str = ""
+            for faculty_name, specialities in faculties.items():
+                speciality_str = ""
+                for speciality_name, courses in specialities.items():
+                    course_str = ""
+                    for course_id, result in courses.items():
+                        if course_id in valid_ids:
+                            course_str += result
+                    if course_str:
+                        speciality_str += speciality_name + course_str
+                if idx != len(res_by_university) - 1 and speciality_str:
+                    speciality_str += "-" * 50 + "\n\n"
+                if speciality_str:
+                    faculty_str += faculty_name + speciality_str
+            if faculty_str:
+                str_out += university_name + faculty_str
+        if str_out:
+            bot.send_message(chat_id, str_out, parse_mode='HTML')
 
 
 if __name__ == '__main__':
